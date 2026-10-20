@@ -9,6 +9,69 @@ from Crypto.Cipher import AES
 from Crypto.Util.Padding import pad
 from base64 import b64encode
 import urllib.parse
+import argparse
+import datetime
+
+
+# 当前使用的定位数据文件，启动时按 --profile/日期 在正常版与节假日版之间切换
+punchdata_filename = 'punchdata.json'
+
+# 国务院公布的法定节假日放假日期（含调休放假、不含补班），接口和缓存都取不到时兜底，每年公布后更新这里
+FALLBACK_HOLIDAY_DATES = {
+    '2026': [
+        '2026-01-01', '2026-01-02', '2026-01-03',
+        '2026-02-15', '2026-02-16', '2026-02-17', '2026-02-18', '2026-02-19',
+        '2026-02-20', '2026-02-21', '2026-02-22', '2026-02-23',
+        '2026-04-04', '2026-04-05', '2026-04-06',
+        '2026-05-01', '2026-05-02', '2026-05-03', '2026-05-04', '2026-05-05',
+        '2026-06-19', '2026-06-20', '2026-06-21',
+        '2026-09-25', '2026-09-26', '2026-09-27',
+        '2026-10-01', '2026-10-02', '2026-10-03', '2026-10-04', '2026-10-05',
+        '2026-10-06', '2026-10-07',
+    ],
+}
+
+
+def ToIsoDate(year, key):
+    """接口键为 MM-DD，兼容万一返回完整日期的情况"""
+    return key if str(key).startswith(str(year)) else f"{year}-{key}"
+
+
+def LoadHolidayDates(year):
+    """返回 {ISO日期: 节日名} 的法定放假日集合，来源依次为：在线接口、本地缓存、内置表；全失败返回 None"""
+    cache_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'cache', f'holiday_calendar_{year}.json')
+    try:
+        res = requests.get(f'https://timor.tech/api/holiday/year/{year}', timeout=10).json()
+        if res.get('code') == 0 and res.get('holiday'):
+            with open(cache_file, 'w', encoding='utf-8') as f:
+                json.dump(res['holiday'], f, ensure_ascii=False)
+            return {ToIsoDate(year, k): v.get('name', '') for k, v in res['holiday'].items() if v.get('holiday')}
+    except Exception as e:
+        print(f"[调度] 节假日接口不可用（{e}），尝试本地数据")
+    if os.path.exists(cache_file):
+        try:
+            with open(cache_file, 'r', encoding='utf-8') as f:
+                m = json.load(f)
+            return {ToIsoDate(year, k): v.get('name', '') for k, v in m.items() if v.get('holiday')}
+        except Exception:
+            pass
+    if str(year) in FALLBACK_HOLIDAY_DATES:
+        return {d: '' for d in FALLBACK_HOLIDAY_DATES[str(year)]}
+    return None
+
+
+def DecideProfile(force='auto', today=None):
+    """返回 (profile, 原因)，profile 为 normal / holiday"""
+    if force in ('normal', 'holiday'):
+        return force, f'手动指定 --profile {force}'
+    day = today or datetime.date.today()
+    dates = LoadHolidayDates(day.year)
+    if not dates:
+        return 'normal', '无节假日数据可用，按非节假日处理'
+    if day.isoformat() in dates:
+        name = dates[day.isoformat()]
+        return 'holiday', f"法定节假日{f'（{name}）' if name else ''}"
+    return 'normal', '非节假日'
 
 
 def InitDB():
@@ -109,8 +172,6 @@ def testLoginStatus(headers, jws):
         'size': 10
     }
     headers['Host'] = "gw.wozaixiaoyuan.com"
-    headers['cookie'] = f'JWSESSION={jws}'
-    headers['cookie'] = f'JWSESSION={jws}'
     headers['cookie'] = f'WZXYSESSION={jws}'
     res = requests.get(url, headers=headers, params=params)
     text = json.loads(res.text)
@@ -193,6 +254,11 @@ def InsertOrUpdateUserData(username, jws, punchData):
 
 
 def GetPunchData(username, location, tencentKey):
+    # 本地定位文件优先（腾讯key失效时的兜底），正常版/节假日版由 punchdata_filename 决定
+    punch_file = os.path.join(os.path.dirname(__file__), 'cache', punchdata_filename)
+    if os.path.exists(punch_file):
+        with open(punch_file, 'r', encoding='utf-8') as f:
+            return json.load(f)
     # 从sqlite中拿到用户对应jws
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
@@ -233,7 +299,12 @@ def GetMySignLogs(headers):
         'page': 1,
         'size': 10
     }
-    data = requests.get(url, headers= headers, params=params).json()['data'][0]
+    res = requests.get(url, headers=headers, params=params).json()
+    data = res.get('data') or []
+    if not data:
+        print("当前没有待签到任务")
+        return False, False
+    data = data[0]
     if int(data['signStatus']) != 1:
         print("用户已打过卡！")
         return False, False
@@ -313,6 +384,8 @@ def doBluePunch(headers, username, config, mails):
 
 def main():
     for config in configs:
+        if not config:  # 跳过 YAML 中多余的 --- 产生的空文档
+            continue
         global school_id
         username = config['username']
         school_id = get_school_id(school)
@@ -342,8 +415,6 @@ def main():
             'Connection': 'keep-alive',
             'Accept': 'application/json, text/plain, */*',
             'jwsession': jws,
-            "cookie": f'JWSESSION={jws}',
-            "cookie": f'JWSESSION={jws}',
             "cookie": f'WZXYSESSION={jws}',
             'User-Agent': 'Mozilla/5.0 (Linux; Android 10; WLZ-AN00 Build/HUAWEIWLZ-AN00; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/86.0.4240.99 XWEB/4343 MMWEBSDK/20220903 Mobile Safari/537.36 MMWEBID/4162 MicroMessenger/8.0.28.2240(0x28001C35) WeChat/arm64 Weixin NetType/WIFI Language/zh_CN ABI/arm64 miniProgram/wxce6d08f781975d91',
             'Content-Type': 'application/json;charset=UTF-8',
@@ -371,6 +442,17 @@ if __name__ == "__main__":
     current_path = os.path.abspath(__file__)
     config_path = os.path.join(os.path.dirname(current_path), 'cache', 'config.yaml')
     db_path = os.path.join(os.path.dirname(current_path), 'cache', 'userdata.db')
+    parser = argparse.ArgumentParser(description='我在校园自动打卡')
+    parser.add_argument('--profile', choices=['auto', 'normal', 'holiday'], default='auto',
+                        help='定位方案：auto 按日期自动切换（默认），normal 强制正常版，holiday 强制节假日版')
+    args = parser.parse_args()
+    profile, reason = DecideProfile(args.profile)
+    punchdata_filename = 'punchdata_holiday.json' if profile == 'holiday' else 'punchdata.json'
+    if profile == 'holiday' and not os.path.exists(os.path.join(os.path.dirname(current_path), 'cache', punchdata_filename)):
+        print(f"[调度] 节假日定位文件 {punchdata_filename} 不存在，本次回退正常版")
+        profile = 'normal'
+        punchdata_filename = 'punchdata.json'
+    print(f"[调度] {datetime.date.today().isoformat()} {reason}，使用{'节假日' if profile == 'holiday' else '正常'}版定位（{punchdata_filename}）")
     configs = GetConfigs()
     mails = next(configs)
     school = mails['school']

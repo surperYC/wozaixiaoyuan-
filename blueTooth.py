@@ -130,7 +130,7 @@ def main():
         configs = configss.split("#")
         username = configs[0]
         password = configs[1]
-        school = "昆明理工大学"
+        school = os.environ.get('wzxy_school', '')
         mark = username
         key = (username + "0000000000000000")[:16]
         Logger.w_log(f"账号- {mark} -----------------", mark)

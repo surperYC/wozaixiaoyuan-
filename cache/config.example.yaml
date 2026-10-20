@@ -1,0 +1,27 @@
+# ============================================================
+# 我在校园自动打卡 - 配置模板
+# 使用方法：复制本文件为 cache/config.yaml 后填写真实信息
+#   Windows:  Copy-Item cache\config.example.yaml cache\config.yaml
+#   Linux  :  cp cache/config.example.yaml cache/config.yaml
+# 注意：cache/config.yaml 已被 .gitignore 忽略，请勿提交真实账号信息！
+#
+# 多账号：复制下面「账号 1」整段（从 username 到 location），
+#         在每段账号前面单独写一行 --- 分隔即可。
+# ============================================================
+
+# ---------------- 全局配置（第一段，第一个 --- 之前）----------------
+mail_address:            # 发送通知的邮箱地址（如 xxx@163.com），不用邮件推送则留空
+password:                # 上面邮箱的 SMTP 授权码（不是邮箱登录密码！），留空则不使用邮件推送
+host: smtp.163.com       # 邮箱 SMTP 服务器，如 smtp.163.com / smtp.qq.com
+school: 你的学校名称      # 必须与「我在校园」登录页学校列表中的名称完全一致
+tencent_map:             # 腾讯位置服务 WebService API Key，用于把 location 解析成经纬度；留空则使用本地 punchdata 兜底
+
+---
+# ---------------- 账号 1 ----------------
+username: "你的我在校园账号"   # 通常为学号或身份证号，纯数字也建议加引号
+password: "你的登录密码"       # 建议加引号；含 @ # : 等特殊字符时必须加引号
+receive:                       # 接收通知的邮箱地址，留空表示不接收邮件
+sct_ftqq:                      # Server 酱 SendKey，留空表示不使用
+blue_sign: no                  # 是否蓝牙打卡：yes / no
+dorm_sign: yes                 # 是否归寝定位打卡：yes / no
+location: 省 市 区 街道 路      # 打卡地址（使用 punchdata 本地定位文件时忽略此项）

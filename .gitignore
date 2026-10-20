@@ -1,0 +1,30 @@
+# ===== 本地私密配置与运行数据（切勿提交）=====
+cache/config.yaml
+cache/config.yaml.*
+cache/punchdata*.json
+cache/*.db
+cache/*.db-journal
+cache/*.log
+cache/*.bak*
+cache/holiday_calendar_*.json
+
+# ===== Python =====
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+build/
+dist/
+
+# ===== 编辑器 / 操作系统 =====
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ===== 其他 =====
+*.zip
